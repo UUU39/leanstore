@@ -74,8 +74,8 @@ class BaseTest : public ::testing::Test {
 
     // Reset DB file for testing
     if (setup_fd) {
-      test_file_fd_ = open(FLAGS_db_path.c_str(), O_RDWR | O_DIRECT, S_IRWXU);
-      assert(test_file_fd_ > 0);
+      test_file_fd_ = open(tmp_db_path.c_str(), O_RDWR | O_DIRECT, S_IRWXU);
+      assert(test_file_fd_ >= 0);
     }
 
     // Reset env
