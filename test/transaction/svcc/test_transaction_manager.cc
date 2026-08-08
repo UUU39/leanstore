@@ -181,7 +181,6 @@ auto main(int argc, char **argv) -> int {
   ::testing::InitGoogleTest(&argc, argv);
   FLAGS_worker_count        = 4;
   FLAGS_wal_enable          = true;
-  FLAGS_txn_mvcc            = false;  // TODO(XXX): Test SVCC for now
   FLAGS_wal_force_log_flush = false;  // Disable force log flush for testing
   FLAGS_wal_enable_recovery = false;
   FLAGS_wal_batch_write_kb  = 1024 * 1024;  // Very large to prevent group commit from being triggered
