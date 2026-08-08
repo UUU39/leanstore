@@ -46,11 +46,6 @@ DEFINE_uint32(wal_recovery_threads, 1, "Number of threads used for recovery");
 // -----------------------------------------------------------------------------------
 /* Transaction */
 DEFINE_bool(txn_debug, false, "Enable debugging for transaction ops, including commit latency info");
-DEFINE_bool(txn_mvcc, false,
-            "Use Multi-Version CC if true; Single-Version otherwise"
-            "For SVCC, 2PL Wait-Die is implemented"
-            "For MVCC, Hyper-style MVCC with OCC validation (no predicate locking) is implemented"
-            "Note that, this MVCC impl suffers from phantom read -- it is acceptable for a simple prototype");
 DEFINE_string(txn_default_isolation_level, "ru",
               "The serializable mode used in LeanStore, only support two following modes"
               "(ru: READ_UNCOMMITTED, ser: SERIALIZABLE)");
