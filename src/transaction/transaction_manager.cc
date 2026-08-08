@@ -26,19 +26,8 @@ thread_local timestamp_t TransactionManager::previous_completed_time = 0;
 TransactionManager::TransactionManager(buffer::BufferManager *buffer_manager, LogManager *log_manager,
                                        std::atomic<bool> &is_running)
     : buffer_(buffer_manager), log_manager_(log_manager) {
-  if (FLAGS_txn_mvcc) {
-    version_manager_       = std::make_unique<mvcc::VersionManager>();
-    lock_manager_          = std::make_unique<mvcc::LockManager>(version_manager_.get());
-    background_version_gc_ = std::thread([&]() {
-      while (is_running.load(std::memory_order_relaxed)) {
-        version_manager_->Sweep();
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-      }
-    });
-  } else {
-    lock_manager_          = std::make_unique<svcc::LockManager>();
-    background_version_gc_ = std::thread();
-  }
+  lock_manager_          = std::make_unique<svcc::LockManager>();
+  background_version_gc_ = std::thread();
 };
 
 TransactionManager::~TransactionManager() {
