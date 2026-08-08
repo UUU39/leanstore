@@ -53,18 +53,6 @@ auto Transaction::BufferPool() -> buffer::BufferManager * { return manager_->buf
 
 auto Transaction::LockManager() -> transaction::ILockManager * { return manager_->lock_manager_.get(); }
 
-auto Transaction::LookupVersionChain(const LockableTuple *key, const AccessPayloadFunc &read_cb,
-                                     timestamp_t &out_tuple_ts) -> bool {
-  Ensure(FLAGS_txn_mvcc);
-  return manager_->version_manager_->ReadValidVersion(start_ts, key, read_cb, out_tuple_ts);
-}
-
-void Transaction::UpdateTupleReadTS(const LockableTuple *key, timestamp_t tuple_ts) {
-  Ensure(FLAGS_txn_mvcc && IsRunning());
-  reinterpret_cast<mvcc::LockManager *>(LockManager())
-    ->SetTupleTimestamp(key, tuple_ts, iso_level == IsolationLevel::SERIALIZABLE);
-}
-
 /**
  * @brief Serialize the txn's GSN into a buffer
  * Format, assuming the GSN unordered map stores info of W-2, W-9, and W-5:

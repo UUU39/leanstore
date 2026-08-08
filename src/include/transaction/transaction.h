@@ -83,11 +83,6 @@ class Transaction {
   void MarkAsWrite();
   auto HasBLOB() -> bool;
 
-  // MVCC utilities
-  void UpdateTupleReadTS(const LockableTuple *key, timestamp_t tuple_ts);
-  auto LookupVersionChain(const LockableTuple *key, const AccessPayloadFunc &read_cb, timestamp_t &out_tuple_ts)
-    -> bool;
-
   // GSN Vector utility
   auto SerializeGSNVector(u8 *buffer) const -> u64;
   auto SerializedVectorSize() const -> u64;
