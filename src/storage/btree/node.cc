@@ -9,8 +9,6 @@
 #include <algorithm>
 #include <cstring>
 
-#define KV_HAS_TIMESTAMP(node) ((FLAGS_txn_mvcc && (node).header.is_leaf))
-
 namespace leanstore::storage {
 
 using TM = transaction::Transaction;
@@ -177,8 +175,7 @@ void BTreeNodeImpl<NodeHeader>::Compactify(const ComparisonLambda &cmp) {
   // Clone tmp back into this, and then generate hint again
   CopyNodeContent(this, &tmp);
   MakeHint();
-  // TODO(XXX): Current MVCC impl calculates FreeSpace() wrongly - not including soft-deleted tuples.
-  if (!FLAGS_txn_mvcc) { assert(FreeSpace() == space_after_compacted); }
+  assert(FreeSpace() == space_after_compacted);
 }
 
 template <class NodeHeader>
@@ -193,7 +190,7 @@ auto BTreeNodeImpl<NodeHeader>::FreeSpaceAfterCompaction() -> leng_t {
 
 template <class NodeHeader>
 auto BTreeNodeImpl<NodeHeader>::SpaceRequiredForKV(leng_t key_len, leng_t payload_len) -> leng_t {
-  return sizeof(PageSlot) + (key_len - header.prefix_len) + payload_len + KV_HAS_TIMESTAMP(*this) * sizeof(timestamp_t);
+  return sizeof(PageSlot) + (key_len - header.prefix_len) + payload_len;
 }
 
 template <class NodeHeader>
@@ -209,15 +206,14 @@ auto BTreeNodeImpl<NodeHeader>::GetKey(leng_t slot_id) -> u8 * {
 
 template <class NodeHeader>
 auto BTreeNodeImpl<NodeHeader>::GetTimestamp(leng_t slot_id) -> timestamp_t {
-  if (!KV_HAS_TIMESTAMP(*this)) { return transaction::INVALID_TS; }
-  auto ts_offset = slots[slot_id].offset + slots[slot_id].key_length;
-  return LoadUnaligned<timestamp_t>(Ptr() + ts_offset);
+  // MVCC is removed and timestamps are no longer used, this is only for compatibility
+  return transaction::INVALID_TS;
 }
 
 /* Return memory addr of the payload */
 template <class NodeHeader>
 auto BTreeNodeImpl<NodeHeader>::GetPayload(leng_t slot_id) -> std::span<u8> {
-  auto data_offset = slots[slot_id].offset + slots[slot_id].key_length + KV_HAS_TIMESTAMP(*this) * sizeof(timestamp_t);
+  auto data_offset = slots[slot_id].offset + slots[slot_id].key_length;
   return {Ptr() + data_offset, slots[slot_id].payload_length};
 }
 
@@ -339,7 +335,7 @@ template <class NodeHeader>
 void BTreeNodeImpl<NodeHeader>::StoreRecordDataWithoutPrefix(leng_t slot_id, std::span<u8> key_no_prefix,
                                                              std::span<const u8> payload) {
   u8 *key             = key_no_prefix.data();
-  auto required_space = key_no_prefix.size() + payload.size() + KV_HAS_TIMESTAMP(*this) * sizeof(timestamp_t);
+  auto required_space = key_no_prefix.size() + payload.size();
   // update page metadata
   header.data_offset -= required_space;
   header.space_used += required_space;
@@ -376,19 +372,12 @@ auto BTreeNodeImpl<NodeHeader>::InsertKeyValue(std::span<u8> key, std::span<cons
 }
 
 template <class NodeHeader>
-auto BTreeNodeImpl<NodeHeader>::RemoveSlot(leng_t slot_id, bool soft_delete) -> bool {
-  if (soft_delete) {
-    // We only trigger soft delete under MVCC, i.e., mark tombstone
-    assert(KV_HAS_TIMESTAMP(*this));
-    header.space_used -= slots[slot_id].payload_length;
-    slots[slot_id].payload_length = 0;
-  } else {
-    header.space_used -= slots[slot_id].key_length;
-    header.space_used -= slots[slot_id].payload_length;
-    std::move(&slots[slot_id + 1], &slots[header.count], &slots[slot_id]);
-    header.count--;
-    MakeHint();
-  }
+auto BTreeNodeImpl<NodeHeader>::RemoveSlot(leng_t slot_id) -> bool {
+  header.space_used -= slots[slot_id].key_length;
+  header.space_used -= slots[slot_id].payload_length;
+  std::move(&slots[slot_id + 1], &slots[header.count], &slots[slot_id]);
+  header.count--;
+  MakeHint();
   return true;
 }
 
@@ -396,14 +385,7 @@ template <class NodeHeader>
 auto BTreeNodeImpl<NodeHeader>::RemoveKey(std::span<u8> key, const ComparisonLambda &cmp) -> bool {
   bool found;
   auto slot_id = LowerBound(key, found, cmp);
-  return (found) ? RemoveSlot(slot_id, false) : false;
-}
-
-template <class NodeHeader>
-void BTreeNodeImpl<NodeHeader>::UpdateTimestamp(leng_t slot_id, timestamp_t commit_ts) {
-  assert(KV_HAS_TIMESTAMP(*this));
-  auto ts_offset = slots[slot_id].offset + slots[slot_id].key_length;
-  std::memcpy(Ptr() + ts_offset, &commit_ts, sizeof(timestamp_t));
+  return (found) ? RemoveSlot(slot_id) : false;
 }
 
 // -------------------------------------------------------------------------------------
@@ -438,10 +420,6 @@ void BTreeNodeImpl<NodeHeader>::CopyKeyValueRange(BTreeNodeImpl<NodeHeader> *dst
     dst->header.count += src_count;
   } else {
     for (auto idx = 0; idx < src_count; idx++) { CopyKeyValue(dst, src_slot + idx, dst_slot + idx); }
-  }
-  if (KV_HAS_TIMESTAMP(*this)) {
-    assert(KV_HAS_TIMESTAMP(*dst));
-    for (auto idx = 0; idx < src_count; idx++) { dst->UpdateTimestamp(dst_slot + idx, GetTimestamp(src_slot + idx)); }
   }
   assert((dst->Ptr() + dst->header.data_offset) >= reinterpret_cast<u8 *>(dst->slots + dst->header.count));
 }
@@ -616,7 +594,7 @@ auto BTreeNodeImpl<NodeHeader>::MergeNodes(leng_t left_slot_id, BTreeNodeImpl<No
   tmp.MakeHint();
   CopyNodeContent(right, &tmp);
   // update parent's entries
-  parent->RemoveSlot(left_slot_id, false);
+  parent->RemoveSlot(left_slot_id);
   return true;
 }
 

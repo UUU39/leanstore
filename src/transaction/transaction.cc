@@ -11,13 +11,10 @@
 
 namespace leanstore::transaction {
 
-thread_local timestamp_t Transaction::TUPLE_UNDO_TIMESTAMP;
 thread_local Transaction Transaction::active_txn = Transaction();
 
 void Transaction::Initialize(TransactionManager *manager, timestamp_t start_timestamp, Type txn_type,
                              IsolationLevel level, Mode txn_mode) {
-  TUPLE_UNDO_TIMESTAMP = INVALID_TS;  // Reset undo timestamp for normal processing
-
   //--------------------------
   manager_      = manager;
   is_read_only_ = true;

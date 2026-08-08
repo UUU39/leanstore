@@ -46,24 +46,12 @@ auto PageGuard<PageClass>::GSN() -> timestamp_t {
 }
 
 template <class PageClass>
-auto PageGuard<PageClass>::OwnTuple(leng_t tree_id, std::span<u8> key) -> bool {
-  auto &txn = TM::active_txn;
-  Ensure(txn.IsRunning());
-  if (FLAGS_txn_mvcc) {
-    LOCKABLE_TUPLE_STACK(lockable, key, tree_id);
-    return transaction::mvcc::LockManager::OwnTuple(lockable);
-  }
-  return false;  // SVCC does not use this API
-}
-
-template <class PageClass>
 auto PageGuard<PageClass>::TryLockShared(leng_t tree_id, std::span<u8> key) -> bool {
   auto &txn = TM::active_txn;
   Ensure(txn.IsRunning());
   if (txn.iso_level >= transaction::IsolationLevel::SNAPSHOT_ISOLATION) {
     LOCKABLE_TUPLE_STACK(lockable, key, tree_id);
-    return (FLAGS_txn_mvcc && transaction::mvcc::LockManager::OwnTuple(lockable)) ||
-           txn.LockManager()->TryLockShared(txn.start_ts, lockable);
+    return txn.LockManager()->TryLockShared(txn.start_ts, lockable);
   }
   return true;
 }

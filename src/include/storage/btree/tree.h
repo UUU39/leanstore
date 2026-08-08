@@ -45,8 +45,6 @@ class BTree : public KVInterface {
   /* APIs for use within LeanStore */
   auto IsNotEmpty() -> bool;
   auto CountPages() -> u64;
-  auto GetTimestamp(std::span<u8> key) -> timestamp_t;
-  void UpdateTimestamp(std::span<u8> key, timestamp_t commit_ts);
 
  private:
   /* Iterate all pages utilities */
@@ -85,29 +83,7 @@ class BTree : public KVInterface {
     if (!node.TryLockShared(metadata_slotid_, key_span)) { return OpResult::ABORT_TX; }
 
     // Actual scan read
-    LOCKABLE_TUPLE_STACK(lockable, key_span, metadata_slotid_);
     auto payload = node->GetPayload(pos);
-    auto &txn    = transaction::Transaction::active_txn;
-    if (FLAGS_txn_mvcc && txn.iso_level >= transaction::IsolationLevel::SNAPSHOT_ISOLATION) {
-      auto latest_tuple_ts = node->GetTimestamp(pos);
-      if (txn.start_ts < latest_tuple_ts) {
-        auto read_success = txn.LookupVersionChain(
-          lockable,
-          [&](std::span<const u8> tuple_data) {
-            payload = std::span<u8>(const_cast<u8 *>(tuple_data.data()), tuple_data.size());
-          },
-          latest_tuple_ts);
-        txn.UpdateTupleReadTS(lockable, latest_tuple_ts);
-        // TODO(XXX): What should we do if this tuple version is a deleted one?
-        if (read_success) {
-          auto ret = fn(key_span, payload);
-          return (ret) ? OpResult::OK : OpResult::STOP_SCAN;
-        } else {
-          return OpResult::OK;
-        }
-      }
-      txn.UpdateTupleReadTS(lockable, latest_tuple_ts);
-    }
     auto ret = fn(key_span, payload);
     node.ValidateOrRestart(false);
     return (ret) ? OpResult::OK : OpResult::STOP_SCAN;

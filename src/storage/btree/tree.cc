@@ -256,11 +256,11 @@ auto BTree::InsertIntoLeaf(OptimisticGuard<BTreeNode> &parent, OptimisticGuard<B
 
   /* Check if current key exists or not */
   bool found;
-  auto pos = node->LowerBound(key, found, cmp_lambda_);
+  node->LowerBound(key, found, cmp_lambda_);
   if (found) { return OpResult::DUPLICATE; }
 
   /* Concurrency control */
-  if (!FLAGS_txn_mvcc && !node.TryLock(metadata_slotid_, 0UL, {}, key)) { return OpResult::ABORT_TX; }
+  if (!node.TryLock(metadata_slotid_, 0UL, {}, key)) { return OpResult::ABORT_TX; }
 
   /* Leaf node has enough space -> only latch leaf node */
   auto defer_log = DeferLog<BTreeNode>(); /* Alternative WAL cycle - automatically append log when the scope ends */
@@ -269,9 +269,7 @@ auto BTree::InsertIntoLeaf(OptimisticGuard<BTreeNode> &parent, OptimisticGuard<B
     parent.ValidateOrRestart();
 
     /* Insert Key-Value & Generate the log entry */
-    if (FLAGS_txn_mvcc && !node_locked.TryLock(metadata_slotid_, 0UL, {}, key)) { return OpResult::ABORT_TX; }
-    pos = node_locked->InsertKeyValue(key, payload, cmp_lambda_);
-    if (FLAGS_txn_mvcc) { node_locked->UpdateTimestamp(pos, transaction::Transaction::TUPLE_UNDO_TIMESTAMP); }
+    node_locked->InsertKeyValue(key, payload, cmp_lambda_);
     if (FLAGS_wal_enable) { defer_log.Construct<WALInsert>(node_locked, key, payload); }
   }
 
@@ -287,15 +285,10 @@ auto BTree::UpdateLeafEntry(OptimisticGuard<BTreeNode> &parent, OptimisticGuard<
   // SVCC
   auto tuple_ts = node->GetTimestamp(slot_id);
   node.ValidateOrRestart(false);
-  if (!FLAGS_txn_mvcc && !node.TryLock(metadata_slotid_, tuple_ts, curr_payload, key)) { return OpResult::ABORT_TX; }
+  if (!node.TryLock(metadata_slotid_, tuple_ts, curr_payload, key)) { return OpResult::ABORT_TX; }
   // only lock leaf
   ExclusiveGuard<BTreeNode> node_locked(std::move(node));
   parent.ValidateOrRestart();
-  // MVCC
-  if (FLAGS_txn_mvcc && !node_locked.TryLock(metadata_slotid_, node_locked->GetTimestamp(slot_id),
-                                             node_locked->GetPayload(slot_id), key)) {
-    return OpResult::ABORT_TX;
-  }
   // Log previous payload, trigger func utility if provided, and remove the entry
   if (FLAGS_wal_enable) {
     auto &entry   = node_locked.PrepareWalEntry<WALRemove>(0);
@@ -304,9 +297,8 @@ auto BTree::UpdateLeafEntry(OptimisticGuard<BTreeNode> &parent, OptimisticGuard<
   }
   if (func) { func(curr_payload); }
   // Update key-value
-  node_locked->RemoveSlot(slot_id, false);
-  slot_id = node_locked->InsertKeyValue(key, payload, cmp_lambda_);
-  if (FLAGS_txn_mvcc) { node_locked->UpdateTimestamp(slot_id, transaction::Transaction::TUPLE_UNDO_TIMESTAMP); }
+  node_locked->RemoveSlot(slot_id);
+  node_locked->InsertKeyValue(key, payload, cmp_lambda_);
   if (FLAGS_wal_enable) { GenerateWAL<ExclusiveGuard<BTreeNode>, WALInsert>(node_locked, key, payload); }
   // --------------------------------------------------------------------------
   return OpResult::OK;  // success
@@ -314,9 +306,6 @@ auto BTree::UpdateLeafEntry(OptimisticGuard<BTreeNode> &parent, OptimisticGuard<
 
 // -------------------------------------------------------------------------------------
 auto BTree::LookUp(std::span<u8> key, const AccessPayloadFunc &read_cb) -> OpResult {
-  auto &txn                      = Transaction::active_txn;
-  const bool needs_version_chain = FLAGS_txn_mvcc && txn.iso_level >= transaction::IsolationLevel::SNAPSHOT_ISOLATION;
-
   while (true) {
     try {
       OptimisticGuard<BTreeNode> node = FindLeafOptimistic(key);
@@ -324,38 +313,10 @@ auto BTree::LookUp(std::span<u8> key, const AccessPayloadFunc &read_cb) -> OpRes
       bool found;
       leng_t pos = node->LowerBound(key, found, cmp_lambda_);
 
-      // Own write is always visible regardless of isolation level
-      if (FLAGS_txn_mvcc && node.OwnTuple(metadata_slotid_, key)) {
-        Ensure(found);
-        read_cb(node->GetPayload(pos));
-        return OpResult::OK;
-      }
-
-      // MVCC: check if we need to access version chain
-      LOCKABLE_TUPLE_STACK(lockable, key, metadata_slotid_);
-      if (needs_version_chain) {
-        auto tuple_ts = found ? node->GetTimestamp(pos) : transaction::INVALID_TS;
-        node.ValidateOrRestart(false);
-
-        // If key missing, it means that has never been existed
-        if (!found) { return OpResult::NOT_FOUND; }
-
-        // If current version too new for our snapshot -- walk version chain
-        if (txn.start_ts < tuple_ts) {
-          auto read_success = txn.LookupVersionChain(lockable, read_cb, tuple_ts);
-          txn.UpdateTupleReadTS(lockable, tuple_ts);
-          return read_success ? OpResult::OK : OpResult::NOT_FOUND;
-        }
-
-        // Current version visible -- record read TS for validation, then fall through
-        txn.UpdateTupleReadTS(lockable, tuple_ts);
-      } else if (!found) {
-        return OpResult::NOT_FOUND;
-      }
+      if (!found) { return OpResult::NOT_FOUND; }
 
       // Happy path
       auto payload = node->GetPayload(pos);
-      if (FLAGS_txn_mvcc && payload.empty()) { return OpResult::NOT_FOUND; }
       read_cb(payload);
       return OpResult::OK;
     } catch (const sync::RestartException &) {}
@@ -437,7 +398,7 @@ auto BTree::Remove(std::span<u8> key) -> OpResult {
       auto tuple_ts = node->GetTimestamp(slot_id);
       auto payload  = node->GetPayload(slot_id);
       node.ValidateOrRestart(false);
-      if (!FLAGS_txn_mvcc && !node.TryLock(metadata_slotid_, tuple_ts, payload, key)) { return OpResult::ABORT_TX; }
+      if (!node.TryLock(metadata_slotid_, tuple_ts, payload, key)) { return OpResult::ABORT_TX; }
 
       // Removal
       leng_t entry_size = node->slots[slot_id].key_length + payload.size();
@@ -453,12 +414,7 @@ auto BTree::Remove(std::span<u8> key) -> OpResult {
         ExclusiveGuard<BTreeNode> right_locked(buffer_, parent_locked->GetChild(node_pos + 1));
 
         // Update by remove then insert
-        if (FLAGS_txn_mvcc && !node_locked.TryLock(metadata_slotid_, node_locked->GetTimestamp(slot_id),
-                                                   node_locked->GetPayload(slot_id), key)) {
-          return OpResult::ABORT_TX;
-        }
-        node_locked->RemoveSlot(slot_id, FLAGS_txn_mvcc);
-        if (FLAGS_txn_mvcc) { node_locked->UpdateTimestamp(slot_id, transaction::Transaction::TUPLE_UNDO_TIMESTAMP); }
+        node_locked->RemoveSlot(slot_id);
         // --------------------------------------------------------------------------
         // WAL Remove
         if (FLAGS_wal_enable) {
@@ -475,12 +431,7 @@ auto BTree::Remove(std::span<u8> key) -> OpResult {
         ExclusiveGuard<BTreeNode> node_locked(std::move(node));
         parent.ValidateOrRestart();
         // Update by remove then insert
-        if (FLAGS_txn_mvcc && !node_locked.TryLock(metadata_slotid_, node_locked->GetTimestamp(slot_id),
-                                                   node_locked->GetPayload(slot_id), key)) {
-          return OpResult::ABORT_TX;
-        }
-        node_locked->RemoveSlot(slot_id, FLAGS_txn_mvcc);
-        if (FLAGS_txn_mvcc) { node_locked->UpdateTimestamp(slot_id, transaction::Transaction::TUPLE_UNDO_TIMESTAMP); }
+        node_locked->RemoveSlot(slot_id);
         // --------------------------------------------------------------------------
         // WAL Remove
         if (FLAGS_wal_enable) {
@@ -538,22 +489,16 @@ auto BTree::UpdateInPlace(std::span<u8> key, const ModifyPayloadFunc &func, Fixe
       /* Concurrency control */
       auto tuple_ts = node->GetTimestamp(pos);
       node.ValidateOrRestart(false);
-      if (!FLAGS_txn_mvcc && !node.TryLock(metadata_slotid_, tuple_ts, node->GetPayload(pos), key)) {
-        return OpResult::ABORT_TX;
-      }
+      if (!node.TryLock(metadata_slotid_, tuple_ts, node->GetPayload(pos), key)) { return OpResult::ABORT_TX; }
 
       /* Alternative WAL cycle - automatically append WAL entry when the scope ends */
       auto defer_log = DeferLog<BTreeNode>();
       {
         ExclusiveGuard<BTreeNode> node_locked(std::move(node));
         auto payload = node_locked->GetPayload(pos);
-        if (FLAGS_txn_mvcc && !node_locked.TryLock(metadata_slotid_, node_locked->GetTimestamp(pos), payload, key)) {
-          return OpResult::ABORT_TX;
-        }
 
         /* Modify the record, and store the after-value */
         func(payload);
-        if (FLAGS_txn_mvcc) { node_locked->UpdateTimestamp(pos, transaction::Transaction::TUPLE_UNDO_TIMESTAMP); }
         if (FLAGS_wal_enable && delta != nullptr) { delta->UpdateDeltaPayload(payload); }
 
         /* Generate the delta record */
@@ -631,7 +576,6 @@ auto BTree::CountEntries() -> u64 {
     [](BTreeNode &node) {
       auto ret = node.header.count;
       for (auto idx = 0; idx < node.header.count; idx++) {
-        if (FLAGS_txn_mvcc) { assert(node.GetTimestamp(idx) != transaction::INVALID_TS); }
         if (node.slots[idx].payload_length == 0) { ret--; }
       }
       return ret;
@@ -653,35 +597,6 @@ auto BTree::CountPages() -> u64 {
   OptimisticGuard<BTreeNode> node(buffer_, meta->GetRoot(metadata_slotid_), meta);
 
   return IterateAllNodes(node, [](BTreeNode &) { return 1; }, [](BTreeNode &) { return 1; });
-}
-
-auto BTree::GetTimestamp(std::span<u8> key) -> timestamp_t {
-  while (true) {
-    try {
-      auto node = FindLeafOptimistic(key);
-      bool found;
-      auto pos = node->LowerBound(key, found, cmp_lambda_);
-      if (!found) { return transaction::INVALID_TS; }
-      return node->GetTimestamp(pos);
-    } catch (const sync::RestartException &) {}
-  }
-}
-
-/* Transaction commit will call this function to update tuples' timestamp */
-void BTree::UpdateTimestamp(std::span<u8> key, timestamp_t commit_ts) {
-  while (true) {
-    try {
-      auto node = FindLeafOptimistic(key);
-      bool found;
-      auto pos = node->LowerBound(key, found, cmp_lambda_);
-      if (found) {
-        ExclusiveGuard<BTreeNode> node_locked(std::move(node));
-        assert(node_locked->GetTimestamp(pos) == transaction::INVALID_TS);
-        node_locked->UpdateTimestamp(pos, commit_ts);
-      }
-      return;
-    } catch (const sync::RestartException &) {}
-  }
 }
 
 auto BTree::SizeInMB() -> float { return CountPages() * static_cast<float>(PAGE_SIZE) / MB; }

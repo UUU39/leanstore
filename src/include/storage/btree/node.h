@@ -54,6 +54,7 @@ namespace leanstore::storage {
 **
 **      full_key = node.prefix || key_suffix
 **
+**  MVCC is removed! Timestamps are no longer supported.
 **  Timestamp (optional):
 **  If KV_HAS_TIMESTAMP(node) (defined in node.cc) evaluates to true, a 64-bit timestamp
 **  is stored between the key suffix and the payload.
@@ -196,9 +197,8 @@ class alignas(PAGE_SIZE) BTreeNodeImpl : public PageHeader {
   void StoreRecordData(leng_t slot_id, std::span<u8> key, std::span<const u8> payload);
   void StoreRecordDataWithoutPrefix(leng_t slot_id, std::span<u8> key, std::span<const u8> payload);
   auto InsertKeyValue(std::span<u8> key, std::span<const u8> payload, const ComparisonLambda &cmp) -> leng_t;
-  auto RemoveSlot(leng_t slot_id, bool soft_delete) -> bool;
+  auto RemoveSlot(leng_t slot_id) -> bool;
   auto RemoveKey(std::span<u8> key, const ComparisonLambda &cmp) -> bool;
-  void UpdateTimestamp(leng_t slot_id, timestamp_t commit_ts);
 
   // Clone utilities
   static void CopyNodeContent(BTreeNodeImpl *dst, BTreeNodeImpl *src);

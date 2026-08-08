@@ -42,7 +42,6 @@ struct SerializableTransaction;
 
 class Transaction {
  public:
-  static thread_local timestamp_t TUPLE_UNDO_TIMESTAMP;
   static thread_local Transaction active_txn;
   static constexpr size_t VECTOR_KEY_SIZE = sizeof(wid_t) + sizeof(timestamp_t);
   enum class Type : u8 { USER, SYSTEM };
