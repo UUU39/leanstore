@@ -18,9 +18,7 @@ class TransactionManager {
   static thread_local timestamp_t previous_completed_time;
   inline static std::atomic<timestamp_t> global_clock = 1;  // Valid timestamp always >= 1
 
-  TransactionManager(buffer::BufferManager *buffer_manager, recovery::LogManager *log_manager,
-                     std::atomic<bool> &is_running);
-  ~TransactionManager();
+  TransactionManager(buffer::BufferManager *buffer_manager, recovery::LogManager *log_manager);
 
   static auto ParseIsolationLevel(const std::string &str) -> IsolationLevel;
 
@@ -42,8 +40,6 @@ class TransactionManager {
   buffer::BufferManager *buffer_;
   recovery::LogManager *log_manager_;
   std::unique_ptr<ILockManager> lock_manager_;
-  std::unique_ptr<mvcc::VersionManager> version_manager_ = nullptr;
-  std::thread background_version_gc_;
 };
 
 }  // namespace leanstore::transaction

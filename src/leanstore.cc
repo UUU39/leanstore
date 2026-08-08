@@ -29,7 +29,7 @@ LeanStore::LeanStore()
     : buffer_pool(std::make_unique<buffer::BufferManager>(is_running)),
       log_manager(std::make_unique<recovery::LogManager>(is_running)),
       transaction_manager(
-        std::make_unique<transaction::TransactionManager>(buffer_pool.get(), log_manager.get(), is_running)),
+        std::make_unique<transaction::TransactionManager>(buffer_pool.get(), log_manager.get())),
       blob_manager(std::make_unique<storage::blob::BlobManager>(buffer_pool.get())),
       recovery(std::make_unique<recovery::RecoveryManager>(buffer_pool.get())),
       worker_pool(is_running,

@@ -23,18 +23,10 @@ namespace leanstore::transaction {
 
 thread_local timestamp_t TransactionManager::previous_completed_time = 0;
 
-TransactionManager::TransactionManager(buffer::BufferManager *buffer_manager, LogManager *log_manager,
-                                       std::atomic<bool> &is_running)
+TransactionManager::TransactionManager(buffer::BufferManager *buffer_manager, LogManager *log_manager)
     : buffer_(buffer_manager), log_manager_(log_manager) {
-  lock_manager_          = std::make_unique<svcc::LockManager>();
-  background_version_gc_ = std::thread();
+  lock_manager_ = std::make_unique<svcc::LockManager>();
 };
-
-TransactionManager::~TransactionManager() {
-  if (background_version_gc_.joinable()) {
-    background_version_gc_.join();  // blocks until thread finishes
-  }
-}
 
 auto TransactionManager::ParseIsolationLevel(const std::string &str) -> IsolationLevel {
   if (str == "ser") { return IsolationLevel::SERIALIZABLE; }
@@ -113,9 +105,6 @@ void TransactionManager::CommitTransaction() {
     DurableCommit(txn, txn.stats.precommit);
     if (start_profiling) { statistics::precommited_txn[LeanStore::worker_thread_id] += 1; }
   }
-
-  // Advance safe commit ts in version manager
-  if (FLAGS_txn_mvcc) { version_manager_->AdvanceLocalTimestamp(LeanStore::worker_thread_id, txn.commit_ts); }
 }
 
 auto TransactionManager::ValidateReadSet() -> bool {
