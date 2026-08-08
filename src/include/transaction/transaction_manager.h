@@ -4,7 +4,6 @@
 #include "leanstore/kv_interface.h"
 #include "recovery/log_manager.h"
 #include "transaction/lock_manager_interface.h"
-#include "transaction/mvcc/version_manager.h"
 #include "transaction/transaction.h"
 
 #include <atomic>

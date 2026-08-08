@@ -4,7 +4,6 @@
 #include "storage/page.h"
 #include "sync/page_state.h"
 #include "transaction/lockable_tuple.h"
-#include "transaction/mvcc/lock_manager.h"
 
 #include <stdexcept>
 #include <type_traits>

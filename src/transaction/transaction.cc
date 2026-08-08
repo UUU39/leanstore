@@ -4,7 +4,6 @@
 #include "leanstore/statistics.h"
 #include "storage/btree/node.h"
 #include "storage/page.h"
-#include "transaction/mvcc/lock_manager.h"
 #include "transaction/transaction_manager.h"
 
 #include <cstring>

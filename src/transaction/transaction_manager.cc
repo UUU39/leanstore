@@ -7,7 +7,6 @@
 #include "leanstore/statistics.h"
 #include "recovery/log_entry.h"
 #include "storage/btree/tree.h"
-#include "transaction/mvcc/lock_manager.h"
 #include "transaction/svcc/lock_manager.h"
 
 #include "share_headers/time.h"
