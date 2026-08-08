@@ -204,12 +204,6 @@ auto BTreeNodeImpl<NodeHeader>::GetKey(leng_t slot_id) -> u8 * {
   return Ptr() + slots[slot_id].offset;
 }
 
-template <class NodeHeader>
-auto BTreeNodeImpl<NodeHeader>::GetTimestamp(leng_t slot_id) -> timestamp_t {
-  // MVCC is removed and timestamps are no longer used, this is only for compatibility
-  return transaction::INVALID_TS;
-}
-
 /* Return memory addr of the payload */
 template <class NodeHeader>
 auto BTreeNodeImpl<NodeHeader>::GetPayload(leng_t slot_id) -> std::span<u8> {

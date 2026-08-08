@@ -283,9 +283,8 @@ auto BTree::UpdateLeafEntry(OptimisticGuard<BTreeNode> &parent, OptimisticGuard<
     return OpResult::NEED_SPLIT;
   }
   // SVCC
-  auto tuple_ts = node->GetTimestamp(slot_id);
   node.ValidateOrRestart(false);
-  if (!node.TryLock(metadata_slotid_, tuple_ts, curr_payload, key)) { return OpResult::ABORT_TX; }
+  if (!node.TryLock(metadata_slotid_, 0, curr_payload, key)) { return OpResult::ABORT_TX; }
   // only lock leaf
   ExclusiveGuard<BTreeNode> node_locked(std::move(node));
   parent.ValidateOrRestart();
@@ -395,10 +394,9 @@ auto BTree::Remove(std::span<u8> key) -> OpResult {
       if (!found) { return OpResult::NOT_FOUND; }
 
       // Concurrency control
-      auto tuple_ts = node->GetTimestamp(slot_id);
-      auto payload  = node->GetPayload(slot_id);
+      auto payload = node->GetPayload(slot_id);
       node.ValidateOrRestart(false);
-      if (!node.TryLock(metadata_slotid_, tuple_ts, payload, key)) { return OpResult::ABORT_TX; }
+      if (!node.TryLock(metadata_slotid_, 0, payload, key)) { return OpResult::ABORT_TX; }
 
       // Removal
       leng_t entry_size = node->slots[slot_id].key_length + payload.size();
@@ -487,9 +485,8 @@ auto BTree::UpdateInPlace(std::span<u8> key, const ModifyPayloadFunc &func, Fixe
       if (!found) { return OpResult::NOT_FOUND; }
 
       /* Concurrency control */
-      auto tuple_ts = node->GetTimestamp(pos);
       node.ValidateOrRestart(false);
-      if (!node.TryLock(metadata_slotid_, tuple_ts, node->GetPayload(pos), key)) { return OpResult::ABORT_TX; }
+      if (!node.TryLock(metadata_slotid_, 0, node->GetPayload(pos), key)) { return OpResult::ABORT_TX; }
 
       /* Alternative WAL cycle - automatically append WAL entry when the scope ends */
       auto defer_log = DeferLog<BTreeNode>();

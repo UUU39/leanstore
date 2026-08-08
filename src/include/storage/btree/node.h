@@ -179,7 +179,6 @@ class alignas(PAGE_SIZE) BTreeNodeImpl : public PageHeader {
 
   // Get data utilities
   auto GetKey(leng_t slot_id) -> u8 *;  // NOTE: this won't return the prefix
-  auto GetTimestamp(leng_t slot_id) -> timestamp_t;
   auto GetPayload(leng_t slot_id) -> std::span<u8>;
   auto GetChild(leng_t slot_id) -> pageid_t;
   void GetSeparatorKey(u8 *out_separator_key, const SeparatorInfo &info);
