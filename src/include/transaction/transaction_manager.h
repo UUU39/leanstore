@@ -7,8 +7,6 @@
 #include "transaction/transaction.h"
 
 #include <atomic>
-#include <thread>
-#include <vector>
 
 namespace leanstore::transaction {
 

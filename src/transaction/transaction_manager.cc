@@ -11,9 +11,6 @@
 
 #include "share_headers/time.h"
 
-#include <chrono>
-#include <thread>
-
 using LogManager = leanstore::recovery::LogManager;
 using LogEntry   = leanstore::recovery::LogEntry;
 using DataEntry  = leanstore::recovery::DataEntry;
