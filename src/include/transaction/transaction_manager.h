@@ -26,7 +26,6 @@ class TransactionManager {
                         IsolationLevel next_tx_isolation_level = ParseIsolationLevel(FLAGS_txn_default_isolation_level),
                         Transaction::Mode next_tx_mode         = Transaction::Mode::OLTP);
   void CommitTransaction();
-  auto ValidateReadSet() -> bool;
   void AbortTransaction();
 
   template <class T>

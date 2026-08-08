@@ -66,13 +66,8 @@ void TransactionManager::CommitTransaction() {
   // Assign timestamp and Release locks according to Concurrency Control
   txn.commit_ts = global_clock++;
   if (txn.iso_level > IsolationLevel::READ_UNCOMMITTED) {
-    lock_manager_->ReleaseAllLocks(txn.start_ts, [&](const LockableTuple *tuple, timestamp_t, std::span<const u8>) {
-      // This lambda -- Updating tuple's TS -- will only be triggered by MVCC impl
-      if (FLAGS_txn_mvcc) {
-        auto index = reinterpret_cast<storage::BTree *>(catalog[tuple->tree_id]);
-        index->UpdateTimestamp({const_cast<u8 *>(tuple->key), tuple->key_len}, txn.commit_ts);
-      }
-    });
+    // SVCC doesn't need tuple timestamp for commit
+    lock_manager_->ReleaseAllLocks(txn.start_ts, [](const LockableTuple *, timestamp_t, std::span<const u8>) {});
     assert(lock_manager_->EmptyLocalSet());
   }
 
@@ -107,23 +102,6 @@ void TransactionManager::CommitTransaction() {
   }
 }
 
-auto TransactionManager::ValidateReadSet() -> bool {
-  auto &txn = Transaction::active_txn;
-
-  // Only validate read set if running under SERIALIZABLE level with MVCC
-  if (!FLAGS_txn_mvcc || txn.iso_level < IsolationLevel::SERIALIZABLE) { return true; }
-  auto mvcc_lock_manager = reinterpret_cast<mvcc::LockManager *>(lock_manager_.get());
-  auto satisfy_occ       = true;
-  // TODO(XXX): Implement the follow atomic-way
-  // Yes: https://pages.cs.wisc.edu/~yxy/cs764-f20/slides/L24.pdf - Slide 10
-  mvcc_lock_manager->ValidateReadSet([&](const LockableTuple *tuple, timestamp_t tuple_ts) {
-    auto index            = reinterpret_cast<storage::BTree *>(catalog[tuple->tree_id]);
-    auto current_tuple_ts = index->GetTimestamp({const_cast<u8 *>(tuple->key), tuple->key_len});
-    if (current_tuple_ts != tuple_ts) { satisfy_occ = false; }
-  });
-  return satisfy_occ;
-}
-
 void TransactionManager::AbortTransaction() {
   auto &txn    = Transaction::active_txn;
   auto &logger = log_manager_->LocalLogWorker();
@@ -135,13 +113,11 @@ void TransactionManager::AbortTransaction() {
   txn.commit_ts = global_clock++;
   if (txn.iso_level > IsolationLevel::READ_UNCOMMITTED) {
     lock_manager_->ReleaseAllLocks(
-      txn.start_ts, [&](const LockableTuple *tuple, auto undo_ts, std::span<const u8> payload) {
-        // This lambda -- Updating tuple's TS -- will only be triggered by MVCC impl
-        auto index                        = reinterpret_cast<storage::BTree *>(catalog[tuple->tree_id]);
-        Transaction::TUPLE_UNDO_TIMESTAMP = undo_ts;
-        [[maybe_unused]] auto ret         = (payload.empty())
-                                              ? index->Remove({const_cast<u8 *>(tuple->key), tuple->key_len})
-                                              : index->Upsert({const_cast<u8 *>(tuple->key), tuple->key_len}, payload);
+      txn.start_ts, [](const LockableTuple *tuple, timestamp_t, std::span<const u8> payload) {
+        auto index                = reinterpret_cast<storage::BTree *>(catalog[tuple->tree_id]);
+        [[maybe_unused]] auto ret = (payload.empty())
+                                      ? index->Remove({const_cast<u8 *>(tuple->key), tuple->key_len})
+                                      : index->Upsert({const_cast<u8 *>(tuple->key), tuple->key_len}, payload);
         assert(ret == OpResult::OK);
       });
   }

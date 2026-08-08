@@ -228,10 +228,6 @@ void LeanStore::StartTransaction(timestamp_t txn_arrival_time, Transaction::Mode
 }
 
 void LeanStore::CommitTransaction() {
-  if (!transaction_manager->ValidateReadSet()) {
-    AbortTransaction();
-    return;
-  }
   transaction_manager->CommitTransaction();
   blob_manager->UnloadAllBlobs();
 }
