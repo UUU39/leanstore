@@ -88,7 +88,7 @@ class BaseTest : public ::testing::Test {
 #endif
     buffer_   = std::make_unique<buffer::BufferManager>(N_PAGES, PHYSICAL_CAP, EXTRA_NO_PG, EVICT_SIZE, is_running_);
     log_      = std::make_unique<recovery::LogManager>(is_running_);
-    txn_man_  = std::make_unique<transaction::TransactionManager>(buffer_.get(), log_.get(), is_running_);
+    txn_man_  = std::make_unique<transaction::TransactionManager>(buffer_.get(), log_.get());
     recovery_ = std::make_unique<recovery::RecoveryManager>(buffer_.get());
 
     // Allocate metadata page (page 0)
