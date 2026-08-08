@@ -55,10 +55,6 @@ namespace leanstore::storage {
 **      full_key = node.prefix || key_suffix
 **
 **  MVCC is removed! Timestamps are no longer supported.
-**  Timestamp (optional):
-**  If KV_HAS_TIMESTAMP(node) (defined in node.cc) evaluates to true, a 64-bit timestamp
-**  is stored between the key suffix and the payload.
-**  Otherwise, the timestamp field is omitted and the payload follows the key suffix directly.
 **
 **  Visualization of record layouts
 **  Without timestamp:
@@ -68,12 +64,6 @@ namespace leanstore::storage {
 **      |          key_suffix          |      payload       |
 **      |------------------------------|--------------------|
 **
-**  With timestamp:
-**
-**      |<--- key_len - prefix_len --->|<---8 bytes--->|<--- payload_len -->|
-**      |------------------------------|---------------|--------------------|
-**      |          key_suffix          |    ts (u64)   |      payload       |
-**      |------------------------------|---------------|--------------------|
 */
 
 // -------------------------------------------------------------------------------------
